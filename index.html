@@ -666,7 +666,7 @@
     <div class="logo-line">
       <div class="logo-icon">🔑</div>
       <h1>Key Scanner</h1>
-      <div class="version-badge" id="app-version">LOCAL</div>
+      <div class="version-badge" id="app-version">LOCAL-1.1</div>
     </div>
     <div class="subtitle">RSA 序號辨識系統（本地運算版）</div>
   </header>
@@ -830,7 +830,7 @@
 <canvas id="capture-canvas" style="display:none;"></canvas>
 
 <script>
-const APP_VERSION = 'LOCAL-1.0';
+const APP_VERSION = 'LOCAL-1.1-1.0';
 let stream = null;
 let currentKey = '';
 let scanRunId = 0;
@@ -907,7 +907,7 @@ function shootPhoto() {
   }
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-  processImageLocal(dataUrl, containerAspect);
+  processImageLOCAL-1.1(dataUrl, containerAspect);
 }
 
 // Forces the UI back to a clean Step 1 (camera) state and shows why -
@@ -1021,7 +1021,7 @@ function handleFile(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = ev => processImageLocal(ev.target.result, getPreviewContainerAspect());
+  reader.onload = ev => processImageLOCAL-1.1(ev.target.result, getPreviewContainerAspect());
   reader.readAsDataURL(file);
 }
 
@@ -1035,14 +1035,14 @@ function toggleApiPanel() {
 
 function saveSkipConfirmSetting() {
   const enabled = document.getElementById('skip-confirm-toggle').checked;
-  localStorage.setItem('skip_confirm_enabled', enabled ? '1' : '0');
+  LOCAL-1.1Storage.setItem('skip_confirm_enabled', enabled ? '1' : '0');
 }
 
 function shouldSkipConfirm() {
-  return localStorage.getItem('skip_confirm_enabled') === '1';
+  return LOCAL-1.1Storage.getItem('skip_confirm_enabled') === '1';
 }
 
-async function processImageLocal(dataUrl, containerAspect) {
+async function processImageLOCAL-1.1(dataUrl, containerAspect) {
   const runId = ++scanRunId;
 
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
@@ -1065,7 +1065,7 @@ async function processImageLocal(dataUrl, containerAspect) {
     progressEl.style.width = '30%';
     statusEl.textContent = '啟動本地 OCR 引擎...';
 
-    const ocrResult = await readKeyLocally(images, progressEl, statusEl);
+    const ocrResult = await readKeyLOCAL-1.1ly(images, progressEl, statusEl);
     if (runId !== scanRunId) return;
 
     const rawText = ocrResult.text;
@@ -1090,7 +1090,7 @@ async function processImageLocal(dataUrl, containerAspect) {
         generateQRForKey(key);
       } else {
         setOcrStatus('success', `本地 OCR 找到候選序號，請核對。`);
-        showConfirm(key, { verified: false }); // local OCR is less reliable than cloud - always ask for a check
+        showConfirm(key, { verified: false }); // LOCAL-1.1 OCR is less reliable than cloud - always ask for a check
       }
     } else if (candidateKey) {
       setOcrStatus('warning', '本地 OCR 信心不足，找到一個可能的候選字串，請仔細核對或手動修正');
@@ -1119,11 +1119,16 @@ const CONFIDENCE_RETAKE_THRESHOLD = 60;
 const MIN_KEY_ALNUM_LEN = 6;   // 序號至少要有幾個英數字元才算候選（依你們實際最短格式調整）
 const MAX_KEY_ALNUM_LEN = 20;  // 序號最多幾個英數字元（避免整段雜訊被當成序號）
 
-async function readKeyLocally(images, progressEl, statusEl) {
+// 已知序號前綴（依你們 Excel C 欄實際格式：RSA1A-28YHKT）。抓到這個前綴時
+// 直接以它為錨點取後面的字元，比從一堆雜訊裡亂猜要準確非常多。
+// 如果之後同一支手機要換抓 D 欄（HW-RSA-）或 E 欄（RSA-），把對應前綴加進來即可。
+const KNOWN_PREFIXES = ['RSA1A'];
+
+async function readKeyLOCAL-1.1ly(images, progressEl, statusEl) {
   if (!window.Tesseract) {
     throw new Error('本地 OCR 引擎尚未載入完成，請確認網路可連到 CDN 下載一次語言檔後再試。');
   }
-  const localOcr = window.Tesseract;
+  const LOCAL-1.1Ocr = window.Tesseract;
 
   const texts = [];
   const modes = [
@@ -1131,7 +1136,10 @@ async function readKeyLocally(images, progressEl, statusEl) {
     { label: 'line', psm: '7' },
     { label: 'sparse', psm: '11' }
   ];
-  const attempts = images.flatMap(img => modes.map(mode => ({ img, mode })));
+  // 只用「拍照框」裁切出來的變體做 OCR（整張參考圖對密集表格幫助不大，
+  // 反而拖慢速度），彩色版跟去格線黑白版都試，看哪個辨識得比較準。
+  const ocrImages = images.filter(img => /guide frame/.test(img.label));
+  const attempts = ocrImages.flatMap(img => modes.map(mode => ({ img, mode })));
   let bestCandidate = '';
   let bestConfidence = 0;
   let bestKey = '';
@@ -1142,7 +1150,7 @@ async function readKeyLocally(images, progressEl, statusEl) {
     statusEl.textContent = `本地 OCR 辨識中 (${i + 1}/${attempts.length})...`;
     const baseProgress = 35 + Math.round((i / attempts.length) * 45);
 
-    const result = await localOcr.recognize(img.dataUrl, 'eng', {
+    const result = await LOCAL-1.1Ocr.recognize(img.dataUrl, 'eng', {
       tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
       preserve_interword_spaces: '1',
       tessedit_pageseg_mode: mode.psm,
@@ -1163,7 +1171,7 @@ async function readKeyLocally(images, progressEl, statusEl) {
     }
     texts.push(`--- ${img.label} / ${mode.label} / ${Math.round(confidence)}% ---\n${text}${candidate ? `\nCandidate: ${candidate}` : ''}`);
 
-    if (candidate && confidence > bestKeyConfidence && isReliableLocalKey(candidate, confidence, text)) {
+    if (candidate && confidence > bestKeyConfidence && isReliableLOCAL-1.1Key(candidate, confidence, text)) {
       bestKey = candidate;
       bestKeyConfidence = confidence;
     }
@@ -1198,17 +1206,37 @@ function cleanupOcrText(text) {
 // 從一段 OCR 文字中，抓出「英數字（可含破折號分組）」的候選片段，
 // 挑出長度落在合理範圍、且同時含字母與數字的最長候選。
 // 依你們實際序號格式（是否一定要有字母＋數字混合、長度範圍）微調即可。
+// 依你截圖裡的樣本（28YHKT、2NRXCR、XDEA8R、RXPKF8、88ANHW、2CN4D3、4HAWJN），
+// RSA1A- 後面固定接 6 碼英數字。這裡限定抓 6 碼，避免把旁邊儲存格的雜訊
+// 也一起黏進來。如果實際上長度會變動，把 {6} 改成類似 {5,7} 的範圍即可。
+const PREFIX_SUFFIX_LEN = '{6}';
+
 function extractKeyCandidate(text) {
+  // 1) 優先用已知前綴（如 RSA1A）錨定：在整段文字（忽略空白/破折號）裡找
+  // 前綴出現的位置，取它後面緊接著的英數字當作序號本體。這樣即使其他
+  // 字元被 OCR 讀錯，只要前綴讀對了就能正確定位，比整段亂猜準確很多。
+  const compact = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  for (const prefix of KNOWN_PREFIXES) {
+    const prefixCompact = prefix.replace(/[^A-Z0-9]/g, '');
+    const idx = compact.indexOf(prefixCompact);
+    if (idx !== -1) {
+      const rest = compact.slice(idx + prefixCompact.length, idx + prefixCompact.length + 10);
+      const suffix = rest.match(new RegExp(`^[A-Z0-9]${PREFIX_SUFFIX_LEN}`)) || rest.match(/^[A-Z0-9]{4,10}/);
+      if (suffix) return `${prefix}-${suffix[0]}`;
+    }
+  }
+
+  // 2) 找不到已知前綴時，退回通用抓取邏輯：抓出所有「英數字（可含破折號
+  // 分組）」片段，挑長度合理、英數混合的最長候選。
   const upper = String(text || '').toUpperCase();
   const matches = upper.match(/[A-Z0-9]{2,}(?:[-\s][A-Z0-9]{2,}){0,4}/g) || [];
   if (!matches.length) return '';
 
   const scored = matches.map(m => {
-    const compact = m.replace(/[^A-Z0-9]/g, '');
-    return { raw: m.replace(/\s+/g, '-'), compact, len: compact.length };
+    const alnum = m.replace(/[^A-Z0-9]/g, '');
+    return { raw: m.replace(/\s+/g, '-'), compact: alnum, len: alnum.length };
   });
 
-  // 優先：長度在合理範圍內，且同時含英文字母與數字（大部分序號格式都符合）
   const mixed = scored.filter(s =>
     s.len >= MIN_KEY_ALNUM_LEN && s.len <= MAX_KEY_ALNUM_LEN &&
     /[A-Z]/.test(s.compact) && /\d/.test(s.compact)
@@ -1220,7 +1248,7 @@ function extractKeyCandidate(text) {
   return pool[0].raw;
 }
 
-function isReliableLocalKey(key, confidence, text) {
+function isReliableLOCAL-1.1Key(key, confidence, text) {
   const compact = key.replace(/-/g, '');
   return confidence >= 55 && compact.length >= MIN_KEY_ALNUM_LEN;
 }
@@ -1272,18 +1300,16 @@ async function prepareKeyImages(dataUrl, containerAspect) {
   // more reliable than a pixel heuristic.
   const guideBand = getGuideFrameRect(w, h, containerAspect);
 
-  // 2026-07 A/B test build: sending the COLOR guide-frame crop instead of
-  // the black/white binarized one, at the SAME scale (2.2x) and quality
-  // (0.92) as the old black/white version, to test whether binarization
-  // was actually helping OCR or just adding failure modes when the crop
-  // wasn't perfectly aligned. Old black/white version is backed up
-  // separately - swap `binarize: true` back on to revert.
-  // 2026-07: dropped the 2.2x upscale on the guide-frame crop - now that
-  // operators are physically zooming in close (guide box shrunk to just
-  // the key-text lines), the crop already has plenty of real pixels.
-  // Upscaling a close-up shot just interpolates/blurs without adding real
-  // detail, and makes the payload bigger for no benefit.
-  addVariant('guide frame - color', guideBand, { scale: 1.0, quality: 0.92, binarize: false });
+  // 密集小字體表格（像你們這種一格一格的清單）裁切出來的區域常常只有幾十
+  // 像素高，OCR 會很吃力。這裡依裁切框實際高度動態放大，確保餵給 OCR 的
+  // 文字至少有合理的像素高度可辨識（上限 4x，避免過度放大反而模糊）。
+  const TARGET_MIN_CROP_HEIGHT = 220;
+  const upscale = Math.min(4, Math.max(1, TARGET_MIN_CROP_HEIGHT / Math.max(1, guideBand.h)));
+
+  addVariant('guide frame - color', guideBand, { scale: upscale, quality: 0.92, binarize: false });
+  // 乾淨版：去除彩色格線＋黑白二值化，通常比原始彩色照片更容易被 OCR 讀對，
+  // 尤其是表格裡有紅線切過文字筆畫的狀況。
+  addVariant('guide frame - clean', guideBand, { scale: upscale, quality: 0.92, binarize: true });
   addVariant('full label reference', { x: 0, y: 0, w, h }, { scale: 1.0, quality: 0.85, binarize: false });
   return variants;
 }
@@ -1339,7 +1365,16 @@ function enhanceForOcr(ctx, width, height, mode = 'threshold') {
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
   for (let i = 0; i < data.length; i += 4) {
-    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    let r = data[i], g = data[i + 1], b = data[i + 2];
+    // 濾掉彩色格線（例如你們表格上的紅色分隔線）：這類線條顏色飽和度明顯
+    // 偏高（不是灰階黑/白），文字本身跟背景則是灰階。偵測到高飽和度像素
+    // 就直接當成背景白色處理，避免線條切過文字筆畫影響辨識。
+    const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+    const saturation = maxC - minC;
+    if (saturation > 60 && maxC > 80) {
+      r = g = b = 255;
+    }
+    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
     const contrast = Math.max(0, Math.min(255, (gray - 128) * 2.1 + 128));
     const bw = contrast < 165 ? 0 : 255;
     const value = mode === 'invert' ? 255 - bw : bw;
