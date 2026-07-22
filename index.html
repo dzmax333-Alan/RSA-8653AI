@@ -1,1543 +1,489 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Key Scanner — RSA 序號掃描器（本地運算版）</title>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
-<style>
-  :root {
-    --bg: #0a0e1a;
-    --panel: #111827;
-    --border: #1e3a5f;
-    --accent: #00d4ff;
-    --accent2: #ff6b35;
-    --success: #00ff88;
-    --warn: #ffd60a;
-    --text: #e2e8f0;
-    --muted: #64748b;
-    --glow: 0 0 20px rgba(0,212,255,0.3);
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Exo 2', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  /* Animated grid background */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  .container {
-    position: relative;
-    z-index: 1;
-    max-width: 480px;
-    margin: 0 auto;
-    padding: 16px;
-    padding-bottom: 40px;
-  }
-
-  /* Header */
-  header {
-    text-align: center;
-    padding: 24px 0 20px;
-  }
-
-  .logo-line {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin-bottom: 6px;
-  }
-
-  .logo-icon {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, var(--accent), #0066ff);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 18px;
-    box-shadow: var(--glow);
-  }
-
-  h1 {
-    font-size: 22px;
-    font-weight: 800;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    background: linear-gradient(90deg, var(--accent), #fff);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .version-badge {
-    min-width: 58px;
-    padding: 5px 8px;
-    border: 1px solid rgba(0,212,255,0.45);
-    border-radius: 6px;
-    color: var(--accent);
-    background: rgba(0,212,255,0.08);
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-align: center;
-    box-shadow: 0 0 12px rgba(0,212,255,0.12);
-  }
-
-  .subtitle {
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    font-family: 'Share Tech Mono', monospace;
-  }
-
-  #api-qr-scanner {
-    display: none;
-    margin-top: 10px;
-    border: 1px solid rgba(0,212,255,0.35);
-    border-radius: 10px;
-    overflow: hidden;
-    background: #000;
-  }
-
-  #api-qr-video {
-    width: 100%;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
-    display: block;
-  }
-
-  /* Step indicator */
-  .steps {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0;
-    margin: 20px 0;
-    position: relative;
-  }
-
-  .api-usage-badge {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    min-width: 54px;
-    padding: 5px 8px;
-    border-radius: 7px;
-    border: 1px solid rgba(0,212,255,0.45);
-    background: rgba(0,212,255,0.08);
-    color: var(--success);
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-align: center;
-    box-shadow: 0 0 12px rgba(0,212,255,0.12);
-  }
-
-  .step {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .step-num {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    border: 2px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--muted);
-    transition: all 0.3s;
-    font-family: 'Share Tech Mono', monospace;
-  }
-
-  .step.active .step-num {
-    border-color: var(--accent);
-    color: var(--accent);
-    box-shadow: 0 0 12px rgba(0,212,255,0.4);
-  }
-
-  .step.done .step-num {
-    background: var(--success);
-    border-color: var(--success);
-    color: #000;
-  }
-
-  .step-label {
-    font-size: 9px;
-    color: var(--muted);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .step.active .step-label { color: var(--accent); }
-  .step.done .step-label { color: var(--success); }
-
-  .step-line {
-    width: 32px; height: 2px;
-    background: var(--border);
-    margin-bottom: 14px;
-    transition: background 0.3s;
-  }
-
-  .step-line.done { background: var(--success); }
-
-  /* Panel */
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 14px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .panel::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    opacity: 0.6;
-  }
-
-  .panel-title {
-    font-size: 10px;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    color: var(--accent);
-    font-family: 'Share Tech Mono', monospace;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .panel-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-
-  #sec-apikey.collapsed {
-    padding-bottom: 14px;
-  }
-
-  #sec-apikey.collapsed .api-key-content {
-    display: none;
-  }
-
-  .api-collapse-btn {
-    position: absolute;
-    top: 14px;
-    left: 14px;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    border: 2px solid var(--success);
-    background: rgba(0,255,136,0.12);
-    color: var(--success);
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 20px;
-    line-height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 3;
-  }
-
-  #sec-apikey .panel-title {
-    padding-left: 34px;
-  }
-
-  /* Camera area */
-  #preview-wrap {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 4/3;
-    background: #000;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 12px;
-    border: 1px solid var(--border);
-  }
-
-  #preview {
-    width: 100%; height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  /* Scanning frame overlay */
-  .scan-frame {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-  }
-
-  .scan-frame-inner {
-    width: 78%; height: 20%;
-    position: relative;
-  }
-
-  .scan-frame-inner::before,
-  .scan-frame-inner::after,
-  .sf-bl, .sf-br {
-    content: '';
-    position: absolute;
-    width: 20px; height: 20px;
-    border-color: var(--accent);
-    border-style: solid;
-  }
-
-  .scan-frame-inner::before { top: 0; left: 0; border-width: 2px 0 0 2px; }
-  .scan-frame-inner::after  { top: 0; right: 0; border-width: 2px 2px 0 0; }
-  .sf-bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
-  .sf-br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
-
-  .scan-line {
-    position: absolute;
-    left: 10%; right: 10%;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: scan 2s ease-in-out infinite;
-    box-shadow: 0 0 8px var(--accent);
-  }
-
-  @keyframes scan {
-    0%   { top: 15%; opacity: 1; }
-    50%  { top: 75%; opacity: 1; }
-    100% { top: 15%; opacity: 1; }
-  }
-
-  .hint-overlay {
-    position: absolute;
-    bottom: 8px;
-    left: 0; right: 0;
-    text-align: center;
-    font-size: 10px;
-    color: rgba(255,255,255,0.5);
-    font-family: 'Share Tech Mono', monospace;
-    letter-spacing: 1px;
-  }
-
-  /* Captured image preview */
-  #captured-wrap {
-    display: none;
-    position: relative;
-    width: 100%;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 12px;
-    border: 1px solid var(--border);
-  }
-
-  #captured-img {
-    width: 100%;
-    display: block;
-  }
-
-  /* Buttons */
-  .btn {
-    width: 100%;
-    padding: 14px;
-    border-radius: 10px;
-    border: none;
-    font-family: 'Exo 2', sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .btn-primary {
-    background: linear-gradient(135deg, var(--accent), #0066ff);
-    color: #000;
-    box-shadow: 0 4px 20px rgba(0,212,255,0.3);
-  }
-
-  .btn-primary:active { transform: scale(0.97); }
-
-  .btn-secondary {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    font-size: 11px;
-    padding: 10px;
-    margin-top: 8px;
-  }
-
-  .btn-secondary:active { background: rgba(255,255,255,0.05); }
-
-  .btn-success {
-    background: linear-gradient(135deg, var(--success), #00aa55);
-    color: #000;
-    box-shadow: 0 4px 20px rgba(0,255,136,0.3);
-  }
-
-  .btn-warn {
-    background: linear-gradient(135deg, var(--accent2), #ff3355);
-    color: #fff;
-    box-shadow: 0 4px 20px rgba(255,107,53,0.3);
-  }
-
-  .btn:disabled {
-    opacity: 0.4;
-    pointer-events: none;
-  }
-
-  /* Key display */
-  .key-display {
-    background: rgba(0,0,0,0.4);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 14px;
-    font-family: 'Share Tech Mono', monospace;
-  }
-
-  .key-label {
-    font-size: 9px;
-    letter-spacing: 3px;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-
-  .key-value {
-    font-size: 18px;
-    letter-spacing: 4px;
-    color: var(--warn);
-    word-break: break-all;
-    line-height: 1.6;
-  }
-
-  .key-value span {
-    color: var(--text);
-  }
-
-  .key-value .dash { color: var(--muted); }
-
-  /* Editable key input */
-  #key-input {
-    width: 100%;
-    min-height: 116px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 18px;
-    line-height: 1.65;
-    letter-spacing: 3px;
-    color: var(--warn);
-    text-transform: uppercase;
-    outline: none;
-    margin-bottom: 12px;
-    resize: none;
-    overflow: hidden;
-    white-space: pre;
-    transition: border-color 0.2s;
-  }
-
-  #key-input:focus { border-color: var(--accent); }
-  #key-input::placeholder { color: var(--muted); letter-spacing: 2px; font-size: 12px; }
-
-  /* OCR status */
-  .status-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 11px;
-    font-family: 'Share Tech Mono', monospace;
-    letter-spacing: 1px;
-    margin-bottom: 12px;
-  }
-
-  .status-bar.processing {
-    background: rgba(0,212,255,0.1);
-    border: 1px solid rgba(0,212,255,0.2);
-    color: var(--accent);
-  }
-
-  .status-bar.success {
-    background: rgba(0,255,136,0.1);
-    border: 1px solid rgba(0,255,136,0.2);
-    color: var(--success);
-  }
-
-  .status-bar.error {
-    background: rgba(255,107,53,0.1);
-    border: 1px solid rgba(255,107,53,0.2);
-    color: var(--accent2);
-  }
-
-  .status-bar.warning {
-    background: rgba(255,214,10,0.1);
-    border: 1px solid rgba(255,214,10,0.2);
-    color: var(--warn);
-  }
-
-  .spinner {
-    width: 12px; height: 12px;
-    border: 2px solid rgba(0,212,255,0.3);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .progress-bar {
-    height: 3px;
-    background: var(--border);
-    border-radius: 2px;
-    margin-bottom: 12px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent), #0066ff);
-    border-radius: 2px;
-    transition: width 0.3s;
-    box-shadow: 0 0 8px var(--accent);
-  }
-
-  /* QR Code area */
-  #qr-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-  }
-
-  #qr-box {
-    width: 200px; height: 200px;
-    background: #fff;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
-    box-shadow: 0 0 30px rgba(0,212,255,0.3), 0 0 60px rgba(0,212,255,0.1);
-    border: 3px solid var(--accent);
-  }
-
-  #qr-box canvas, #qr-box img { border-radius: 4px; }
-
-  .qr-hint {
-    text-align: center;
-    font-size: 11px;
-    color: var(--muted);
-    line-height: 1.6;
-    font-family: 'Share Tech Mono', monospace;
-  }
-
-  .qr-key-confirm {
-    background: rgba(0,255,136,0.05);
-    border: 1px solid rgba(0,255,136,0.2);
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 12px;
-    color: var(--success);
-    letter-spacing: 3px;
-    text-align: center;
-    width: 100%;
-    word-break: break-all;
-  }
-
-  /* Hidden input for file */
-  #file-input { display: none; }
-
-  /* Divider */
-  .or-divider {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: 2px;
-    margin: 10px 0;
-  }
-
-  .or-divider::before, .or-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-
-  /* Counter */
-  .counter-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(0,212,255,0.1);
-    border: 1px solid rgba(0,212,255,0.2);
-    border-radius: 20px;
-    padding: 4px 12px;
-    font-size: 10px;
-    font-family: 'Share Tech Mono', monospace;
-    color: var(--accent);
-    letter-spacing: 1px;
-    margin-bottom: 14px;
-  }
-
-  .counter-num {
-    font-size: 16px;
-    font-weight: 800;
-    color: var(--warn);
-  }
-
-  /* Reset / new scan */
-  .reset-area {
-    text-align: center;
-    margin-top: 10px;
-  }
-
-  /* Pulse dot */
-  .dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--success);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.8); }
-  }
-
-  /* Section hidden/visible */
-  .section { display: none; }
-  .section.active { display: block; }
-
-  /* Camera stream */
-  #stream { display: none; }
-  #stream.active { display: block; }
-
-  video#stream {
-    width: 100%; height: 100%;
-    object-fit: cover;
-  }
-</style>
-</head>
-<body>
-<div class="container">
-
-  <header>
-    <div class="logo-line">
-      <div class="logo-icon">🔑</div>
-      <h1>Key Scanner</h1>
-      <div class="version-badge" id="app-version">LOCAL</div>
-    </div>
-    <div class="subtitle">RSA 序號辨識系統（本地運算版）</div>
-  </header>
-
-  <!-- Step indicator -->
-  <div class="steps" id="steps">
-    <div class="step active" id="s1">
-      <div class="step-num">01</div>
-      <div class="step-label">拍照</div>
-    </div>
-    <div class="step-line" id="l1"></div>
-    <div class="step active" id="s2">
-      <div class="step-num">02</div>
-      <div class="step-label">辨識</div>
-    </div>
-    <div class="step-line" id="l2"></div>
-    <div class="step" id="s3">
-      <div class="step-num">03</div>
-      <div class="step-label">確認</div>
-    </div>
-    <div class="step-line" id="l3"></div>
-    <div class="step" id="s4">
-      <div class="step-num">04</div>
-      <div class="step-label">QR碼</div>
-    </div>
-  </div>
-
-  <!-- 完成計數 -->
-  <div style="text-align:center; display:none;">
-    <div class="counter-badge">
-      <span>已完成</span>
-      <span class="counter-num" id="done-count">0</span>
-      <span>台</span>
-    </div>
-  </div>
-
-  <!-- 本地運算設定（取代原本的 API Key 面板）-->
-  <div class="panel collapsed" id="sec-apikey" style="border-color: rgba(0,255,136,0.3);">
-    <button type="button" class="api-collapse-btn" id="api-collapse-btn" onclick="toggleApiPanel()">+</button>
-    <div class="panel-title" style="color:var(--success);">本地運算設定</div>
-    <label style="position:absolute; top:14px; right:14px; display:flex; align-items:center; gap:6px; font-size:11px; color:var(--warn); font-family:'Share Tech Mono',monospace; letter-spacing:1px;">
-      <input type="checkbox" id="skip-confirm-toggle" onchange="saveSkipConfirmSetting()" style="width:16px; height:16px; accent-color:var(--success);">
-      略過確認
-    </label>
-    <div class="api-key-content">
-    <div style="font-size:11px; color:var(--muted); font-family:'Share Tech Mono',monospace; margin-bottom:6px; line-height:1.6;">
-      本版本使用 Tesseract.js 在手機瀏覽器本地端辨識文字，<span style="color:var(--success);">不會呼叫任何雲端 API</span>，沒有次數限制。第一次使用需要下載約 2-4MB 的辨識語言檔，之後會快取在裝置上。
-    </div>
-    <div id="ocr-engine-status" style="margin-top:8px; font-size:10px; font-family:'Share Tech Mono',monospace; color:var(--muted); text-align:center;">引擎狀態：尚未載入</div>
-    </div>
-  </div>
-
-  <!-- STEP 1: 拍照 -->
-  <div class="panel section active" id="sec-capture">
-    <div class="panel-title">步驟 01 — 拍攝貼紙</div>
-
-    <div id="preview-wrap">
-      <video id="stream" autoplay playsinline></video>
-      <img id="preview" src="" alt="" style="display:none;">
-      <div class="scan-frame">
-        <div class="scan-frame-inner">
-          <div class="sf-bl"></div>
-          <div class="sf-br"></div>
-          <div class="scan-line"></div>
-        </div>
-      </div>
-      <div class="hint-overlay">拉近鏡頭，將 RSA 序號文字對準框內</div>
-    </div>
-
-    <div id="capture-warning" class="status-bar warning" style="display:none; margin-bottom:12px;">
-      <span id="capture-warning-text"></span>
-    </div>
-
-    <button class="btn btn-primary" id="btn-camera" onclick="startCamera()">
-      📷 開啟相機
-    </button>
-
-    <button class="btn btn-primary" id="btn-shoot" onclick="shootPhoto()" style="display:none;">
-      ⚡ 拍照辨識
-    </button>
-
-    <div class="or-divider">或</div>
-
-    <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
-    <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">
-      🖼️ 從相簿選擇圖片
-    </button>
-  </div>
-
-  <!-- STEP 2: OCR 處理中 -->
-  <div class="panel section" id="sec-ocr">
-    <div class="panel-title">步驟 02 — AI 辨識中</div>
-
-    <div id="captured-wrap">
-      <img id="captured-img" src="" alt="">
-    </div>
-
-    <div class="status-bar processing" id="ocr-status">
-      <div class="spinner"></div>
-      <span id="ocr-status-text">初始化辨識引擎...</span>
-    </div>
-
-    <div class="progress-bar">
-      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
-    </div>
-
-    <div id="ocr-raw-wrap" style="margin-top:10px;">
-      <div style="font-size:9px; letter-spacing:2px; color:var(--muted); font-family:'Share Tech Mono',monospace; margin-bottom:6px; text-transform:uppercase;">OCR 原始辨識文字</div>
-      <div id="ocr-raw" style="font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--muted); background:rgba(0,0,0,0.3); border-radius:8px; padding:10px; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto; min-height:36px;">等待辨識...</div>
-    </div>
-  </div>
-
-  <!-- STEP 3: 確認序號 -->
-  <div class="panel section" id="sec-confirm">
-    <div class="panel-title">步驟 03 — 確認序號</div>
-
-    <div class="key-label" style="font-size:10px; letter-spacing:2px; color:var(--muted); margin-bottom:8px; font-family:'Share Tech Mono',monospace;">辨識結果（可手動修正）</div>
-
-    <textarea
-      id="key-input"
-      placeholder="例如 RSA1A-28YHKT"
-      rows="2"
-      maxlength="40"
-      oninput="formatKeyInput(this)"
-    ></textarea>
-
-    <div id="key-valid-hint" style="font-size:10px; font-family:'Share Tech Mono',monospace; margin-bottom:12px; color:var(--muted);"></div>
-
-    <button class="btn btn-success" id="btn-gen-qr" onclick="generateQR()">
-      ✅ 確認，產生 QR Code
-    </button>
-
-    <button class="btn btn-secondary" onclick="resetAll()">
-      🔄 重新拍照
-    </button>
-  </div>
-
-  <!-- STEP 4: QR Code -->
-  <div class="panel section" id="sec-qr">
-    <div class="panel-title">步驟 04 — 掃描 QR Code</div>
-
-    <div id="qr-wrap">
-      <div id="qr-box"></div>
-      <div class="qr-key-confirm" id="qr-key-text"></div>
-      <div class="qr-hint">
-        <div>用藍牙條碼槍掃描上方 QR Code</div>
-        <div style="margin-top:4px; color:var(--success);">▶ 自動輸入到登記電腦的表單欄位</div>
-      </div>
-    </div>
-
-    <div style="margin-top:16px;">
-      <button class="btn btn-warn" onclick="nextDevice()">
-        ➡️ 下一台（重新掃描）
-      </button>
-    </div>
-  </div>
-
-</div>
-
-<!-- Hidden canvas for capture -->
-<canvas id="capture-canvas" style="display:none;"></canvas>
-
-<script>
-const APP_VERSION = 'LOCAL-1.1'; // 每次更新請把最後的版本號 +0.1（1.0 → 1.1 → 1.2 ...）
-let stream = null;
-let currentKey = '';
-let scanRunId = 0;
-let keyInputVerified = true;
-let ocrEngineReady = false;
-
-// 本地版：不需要載入任何 API Key，啟動時只確認 Tesseract.js 引擎狀態
-window.addEventListener('DOMContentLoaded', () => {
-  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-  window.scrollTo(0, 0);
-  document.getElementById('app-version').textContent = APP_VERSION;
-  const skipToggle = document.getElementById('skip-confirm-toggle');
-  if (skipToggle) skipToggle.checked = shouldSkipConfirm();
-  const engineStatus = document.getElementById('ocr-engine-status');
-  if (window.Tesseract) {
-    ocrEngineReady = true;
-    if (engineStatus) { engineStatus.textContent = '引擎狀態：已就緒（本地運算）'; engineStatus.style.color = 'var(--success)'; }
-  } else if (engineStatus) {
-    engineStatus.textContent = '引擎狀態：載入中...';
-    const check = setInterval(() => {
-      if (window.Tesseract) {
-        ocrEngineReady = true;
-        engineStatus.textContent = '引擎狀態：已就緒（本地運算）';
-        engineStatus.style.color = 'var(--success)';
-        clearInterval(check);
-      }
-    }, 500);
-  }
-});
-
-// ─── Camera ───────────────────────────────────────────────
-async function startCamera() {
-  try {
-    document.getElementById('capture-warning').style.display = 'none';
-    const s = await navigator.mediaDevices.getUserMedia({
-      // Bumped from 1920x1080 (2026-07): the guide box is now much tighter
-      // (just the key-text lines), so we want as many real sensor pixels
-      // as the device will give us on that smaller area. `ideal` degrades
-      // gracefully on devices that can't do 4K.
-      video: { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } }
-    });
-    stream = s;
-    const video = document.getElementById('stream');
-    video.srcObject = s;
-    video.style.display = 'block';
-    document.getElementById('preview').style.display = 'none';
-    document.getElementById('btn-camera').style.display = 'none';
-    document.getElementById('btn-shoot').style.display = 'flex';
-  } catch (e) {
-    alert('無法開啟相機，請改用相簿選圖功能。');
-  }
-}
-
-function shootPhoto() {
-  const video = document.getElementById('stream');
-  const canvas = document.getElementById('capture-canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-
-  const containerAspect = getPreviewContainerAspect();
-  // Measure sharpness ONLY within the guide-frame crop (the same region
-  // that actually gets sent to Gemini) - not the whole raw photo. Whole-
-  // frame variance was getting diluted whenever the sticker only filled a
-  // small part of the shot and the rest was smooth, textureless chassis
-  // surface, letting genuinely blurry key text slip through undetected
-  // (see 2026-07 field reports). This also matches how BLUR_THRESHOLD was
-  // originally calibrated - against label-only crops, not full photos.
-  const guideRect = getGuideFrameRect(canvas.width, canvas.height, containerAspect);
-  const sharpness = estimateSharpness(canvas, guideRect);
-  if (sharpness < BLUR_THRESHOLD) {
-    retakeToStep1(`⚠ 照片可能模糊（清晰度 ${Math.round(sharpness)}），請保持穩定對焦後重拍`);
-    return; // keep camera stream open, let the operator retake immediately
-  }
-
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-  processImageLocal(dataUrl, containerAspect);
-}
-
-// Forces the UI back to a clean Step 1 (camera) state and shows why -
-// used whenever a photo gets rejected before ever reaching Gemini (e.g.
-// the blur pre-check). Always calls showSection()/setStep() explicitly
-// rather than assuming which section is currently visible, so it works
-// correctly no matter what state the app was left in beforehand.
-function retakeToStep1(message) {
-  showSection('sec-capture');
-  setStep(1);
-  const banner = document.getElementById('capture-warning');
-  const text = document.getElementById('capture-warning-text');
-  if (message) {
-    text.textContent = message;
-    banner.style.display = 'flex';
-  } else {
-    banner.style.display = 'none';
-  }
-  // Camera stream (if already running) is left untouched so the operator
-  // can retake immediately without waiting for it to reinitialize.
-  document.getElementById('sec-capture').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// Reads the ACTUAL rendered aspect ratio of #preview-wrap at capture time,
-// instead of assuming the CSS `aspect-ratio: 4/3` rule took effect. Some
-// browsers/webviews (e.g. older com.android.browser-based ones) may not
-// apply that CSS property, which would silently break the guide-frame
-// crop math in getGuideFrameRect() - measuring the live layout box sidesteps
-// that entirely, since it reflects whatever actually got rendered.
-function getPreviewContainerAspect() {
-  const el = document.getElementById('preview-wrap');
-  const rect = el && el.getBoundingClientRect();
-  if (rect && rect.width > 0 && rect.height > 0) {
-    return rect.width / rect.height;
-  }
-  return 4 / 3; // fallback if layout hasn't painted yet for some reason
-}
-
-// ─── Blur / focus detection ───────────────────────────────
-// Calibration data (2026-07), measured on label-only crops (same as what
-// this check now samples, after the 2026-07 fix below):
-//   - Clearly sharp/legible photo   -> score ~1695
-//   - Clearly blurry/illegible photo -> score ~83
-//   - An earlier "OCR failed" photo -> score ~1195 (i.e. NOT blurry by this
-//     metric - that failure was likely caused by something other than
-//     focus, e.g. glare/angle/small text - which is why the confidence-based
-//     retake check below is kept as the primary safety net, and this blur
-//     check is a secondary filter for genuinely out-of-focus shots).
-// Fix (2026-07): this used to run on the WHOLE captured photo, which let
-// blurry key text slip through whenever the sticker only filled a small
-// part of the frame (a large smooth/textureless chassis background diluted
-// the average variance). Now measured on the guide-frame crop only, so the
-// numbers above are directly comparable again.
-// Threshold set well above the blurry sample and well below the sharp one.
-// Revisit if real-world false positives/negatives show up.
-// Note (2026-07): the guide box just got much tighter (see
-// getGuideFrameRect) to encourage closer physical framing on the key text.
-// That changes what a "typical" crop looks like, so these calibration
-// numbers may drift - watch for new false positives/negatives and re-check
-// with fresh samples if so.
-const BLUR_THRESHOLD = 300;
-
-function estimateSharpness(sourceCanvas, rect) {
-  // Downscale for speed, convert to grayscale, then measure the variance
-  // of a simple Laplacian (edge) response. Sharp/in-focus photos have
-  // strong edges and therefore high variance; blurry photos are smooth
-  // and score low.
-  // If `rect` is given, only that sub-region is sampled (used to measure
-  // just the guide-frame crop instead of the whole photo - see the note
-  // above BLUR_THRESHOLD about why whole-frame measurement was unreliable).
-  const srcX = rect ? rect.x : 0;
-  const srcY = rect ? rect.y : 0;
-  const srcW = rect ? rect.w : sourceCanvas.width;
-  const srcH = rect ? rect.h : sourceCanvas.height;
-
-  const sampleW = 240;
-  const scale = sampleW / srcW;
-  const sampleH = Math.max(1, Math.round(srcH * scale));
-
-  const small = document.createElement('canvas');
-  small.width = sampleW;
-  small.height = sampleH;
-  const sctx = small.getContext('2d', { willReadFrequently: true });
-  sctx.drawImage(sourceCanvas, srcX, srcY, srcW, srcH, 0, 0, sampleW, sampleH);
-
-  const { data } = sctx.getImageData(0, 0, sampleW, sampleH);
-  const gray = new Float32Array(sampleW * sampleH);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-  }
-
-  let sum = 0;
-  let sumSq = 0;
-  let count = 0;
-  for (let y = 1; y < sampleH - 1; y++) {
-    for (let x = 1; x < sampleW - 1; x++) {
-      const idx = y * sampleW + x;
-      const lap =
-        gray[idx - 1] + gray[idx + 1] + gray[idx - sampleW] + gray[idx + sampleW] - 4 * gray[idx];
-      sum += lap;
-      sumSq += lap * lap;
-      count++;
-    }
-  }
-  if (count === 0) return 0;
-  const mean = sum / count;
-  return sumSq / count - mean * mean; // variance of the Laplacian
-}
-
-function handleFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => processImageLocal(ev.target.result, getPreviewContainerAspect());
-  reader.readAsDataURL(file);
-}
-
-// ─── 本地設定面板 ─────────────────────────────────────────
-function toggleApiPanel() {
-  const panel = document.getElementById('sec-apikey');
-  const btn = document.getElementById('api-collapse-btn');
-  const collapsed = panel.classList.toggle('collapsed');
-  btn.textContent = collapsed ? '+' : '-';
-}
-
-function saveSkipConfirmSetting() {
-  const enabled = document.getElementById('skip-confirm-toggle').checked;
-  localStorage.setItem('skip_confirm_enabled', enabled ? '1' : '0');
-}
-
-function shouldSkipConfirm() {
-  return localStorage.getItem('skip_confirm_enabled') === '1';
-}
-
-async function processImageLocal(dataUrl, containerAspect) {
-  const runId = ++scanRunId;
-
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-
-  document.getElementById('captured-img').src = dataUrl;
-  document.getElementById('captured-wrap').style.display = 'block';
-  showSection('sec-ocr');
-  setStep(2);
-
-  const statusEl = document.getElementById('ocr-status-text');
-  const progressEl = document.getElementById('progress-fill');
-
-  statusEl.textContent = '準備影像裁切...';
-  setOcrStatus('processing', '準備影像裁切...');
-  progressEl.style.width = '15%';
-
-  try {
-    const images = await prepareKeyImages(dataUrl, containerAspect);
-    if (runId !== scanRunId) return;
-    progressEl.style.width = '30%';
-    statusEl.textContent = '啟動本地 OCR 引擎...';
-
-    const ocrResult = await readKeyLocally(images, progressEl, statusEl);
-    if (runId !== scanRunId) return;
-
-    const rawText = ocrResult.text;
-    const key = ocrResult.key;
-    const candidateKey = ocrResult.candidateKey || '';
-
-    progressEl.style.width = '100%';
-    document.getElementById('ocr-raw').textContent = [
-      rawText,
-      '',
-      `OCR: ${ocrResult.model}`,
-      ocrResult.confidence != null ? `Confidence: ${Math.round(ocrResult.confidence)}%` : '',
-      key ? `Detected: ${key}` : (candidateKey ? `Candidate: ${candidateKey}` : 'Detected: NOT_FOUND')
-    ].filter(Boolean).join('\n');
-
-    if (key) {
-      const lowConfidence = ocrResult.confidence != null && ocrResult.confidence < CONFIDENCE_RETAKE_THRESHOLD;
-      if (lowConfidence) {
-        setOcrStatus('warning', `本地 OCR 信心值偏低 (${Math.round(ocrResult.confidence)}%)，請仔細核對每個字元，必要時重拍`);
-        showConfirm(key, { verified: false }); // force manual double-check even if "skip confirm" is on
-      } else if (shouldSkipConfirm()) {
-        generateQRForKey(key);
-      } else {
-        setOcrStatus('success', `本地 OCR 找到候選序號，請核對。`);
-        showConfirm(key, { verified: false }); // local OCR is less reliable than cloud - always ask for a check
-      }
-    } else if (candidateKey) {
-      setOcrStatus('warning', '本地 OCR 信心不足，找到一個可能的候選字串，請仔細核對或手動修正');
-      showConfirm(candidateKey, { verified: false });
-    } else {
-      setOcrStatus('warning', '本地 OCR 未能辨識出序號，請手動輸入');
-      showConfirm('', { verified: true });
-    }
-  } catch (err) {
-    if (runId !== scanRunId) return;
-    progressEl.style.width = '100%';
-    setOcrStatus('error', `OCR failed: ${err.message}`);
-    document.getElementById('ocr-raw').textContent = err.message;
-    showConfirm('');
-  }
-}
-
-// Below this OCR confidence (%), always require manual verification before
-// generating the QR code, even if "skip confirm" is enabled.
-const CONFIDENCE_RETAKE_THRESHOLD = 60;
-
-// ─── 本地 OCR（Tesseract.js，離線運算）────────────────────
-// 這裡不假設固定長度／固定分組（RSA1A-28YHKT、HW-RSA-11AIC、RSA-11AIC
-// 這幾種格式長度都不一樣），而是抓出所有「英數字＋破折號」的字串片段，
-// 再依「長度合理、英數混合」挑出最可能是序號的候選字串。
-const MIN_KEY_ALNUM_LEN = 6;   // 序號至少要有幾個英數字元才算候選（依你們實際最短格式調整）
-const MAX_KEY_ALNUM_LEN = 20;  // 序號最多幾個英數字元（避免整段雜訊被當成序號）
-
-// 已知序號前綴（依你們 Excel C 欄實際格式：RSA1A-28YHKT）。抓到這個前綴時
-// 直接以它為錨點取後面的字元，比從一堆雜訊裡亂猜要準確非常多。
-// 如果之後同一支手機要換抓 D 欄（HW-RSA-）或 E 欄（RSA-），把對應前綴加進來即可。
-const KNOWN_PREFIXES = ['RSA1A'];
-
-async function readKeyLocally(images, progressEl, statusEl) {
-  if (!window.Tesseract) {
-    throw new Error('本地 OCR 引擎尚未載入完成，請確認網路可連到 CDN 下載一次語言檔後再試。');
-  }
-  const localOcr = window.Tesseract;
-
-  const texts = [];
-  const modes = [
-    { label: 'block', psm: '6' },
-    { label: 'line', psm: '7' },
-    { label: 'sparse', psm: '11' }
-  ];
-  // 只用「拍照框」裁切出來的變體做 OCR（整張參考圖對密集表格幫助不大，
-  // 反而拖慢速度），彩色版跟去格線黑白版都試，看哪個辨識得比較準。
-  const ocrImages = images.filter(img => /guide frame/.test(img.label));
-  const attempts = ocrImages.flatMap(img => modes.map(mode => ({ img, mode })));
-  let bestCandidate = '';
-  let bestConfidence = 0;
-  let bestKey = '';
-  let bestKeyConfidence = 0;
-
-  for (let i = 0; i < attempts.length; i++) {
-    const { img, mode } = attempts[i];
-    statusEl.textContent = `本地 OCR 辨識中 (${i + 1}/${attempts.length})...`;
-    const baseProgress = 35 + Math.round((i / attempts.length) * 45);
-
-    const result = await localOcr.recognize(img.dataUrl, 'eng', {
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',
-      preserve_interword_spaces: '1',
-      tessedit_pageseg_mode: mode.psm,
-      logger: m => {
-        if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-          progressEl.style.width = `${baseProgress + Math.round(m.progress * 8)}%`;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KEY SCANNER v3.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b1320; /* 深藍色背景 */
+            color: #e2e8f0;
+            background-image: 
+                linear-gradient(rgba(25, 40, 65, 0.5) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(25, 40, 65, 0.5) 1px, transparent 1px);
+            background-size: 20px 20px;
         }
-      }
-    });
+        
+        .tech-font {
+            font-family: 'Share Tech Mono', monospace;
+        }
+        
+        .neon-border {
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.1), inset 0 0 10px rgba(56, 189, 248, 0.05);
+        }
+        
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #1e3a5f;
+            color: #4b5563;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .step-circle.active {
+            border-color: #38bdf8;
+            color: #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+            text-shadow: 0 0 5px rgba(56, 189, 248, 0.8);
+        }
 
-    const confidence = Number(result.data?.confidence || 0);
-    const text = cleanupOcrText(result.data?.text || '');
-    const candidate = extractKeyCandidate(text);
+        .step-circle.completed {
+             border-color: #10b981;
+             color: #10b981;
+        }
+        
+        .step-line {
+            flex-grow: 1;
+            height: 2px;
+            background-color: #1e3a5f;
+            margin: 0 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .step-line.active {
+            background-color: #38bdf8;
+            box-shadow: 0 0 5px rgba(56, 189, 248, 0.4);
+        }
 
-    if (candidate && confidence >= bestConfidence) {
-      bestCandidate = candidate;
-      bestConfidence = confidence;
-    }
-    texts.push(`--- ${img.label} / ${mode.label} / ${Math.round(confidence)}% ---\n${text}${candidate ? `\nCandidate: ${candidate}` : ''}`);
+        .step-line.completed {
+            background-color: #10b981;
+        }
+        
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #38bdf8;
+            box-shadow: 0 0 10px #38bdf8, 0 0 20px #38bdf8;
+            animation: scan 2s linear infinite;
+            display: none;
+            z-index: 10;
+        }
 
-    if (candidate && confidence > bestKeyConfidence && isReliableLocalKey(candidate, confidence, text)) {
-      bestKey = candidate;
-      bestKeyConfidence = confidence;
-    }
-  }
+        .target-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 120px;
+            border: 2px dashed rgba(56, 189, 248, 0.8);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+            border-radius: 8px;
+            pointer-events: none; /* 讓點擊穿透 */
+            z-index: 5;
+            display: none;
+        }
 
-  if (bestKey) {
-    return {
-      model: '本地 OCR',
-      confidence: bestKeyConfidence,
-      key: bestKey,
-      text: `${texts.join('\n\n')}\n\n${bestKey}`
-    };
-  }
+        /* 瞄準框的四個角 */
+        .target-box::before, .target-box::after,
+        .target-corner-bottom::before, .target-corner-bottom::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: #38bdf8;
+            border-style: solid;
+        }
+        
+        .target-box::before { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+        .target-box::after { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+        
+        .target-corner-bottom { position: absolute; bottom: 0; left: 0; right: 0; top: 0;}
+        .target-corner-bottom::before { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+        .target-corner-bottom::after { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+        
+        @keyframes scan {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
 
-  return {
-    model: '本地 OCR',
-    confidence: bestConfidence,
-    key: '',
-    candidateKey: bestCandidate,
-    text: texts.join('\n\n')
-  };
-}
+        #videoElement {
+            width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            object-fit: cover;
+        }
+        
+        #qrcode img {
+            margin: 0 auto;
+            border: 10px solid white;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 sm:p-8">
 
-function cleanupOcrText(text) {
-  return String(text || '')
-    .toUpperCase()
-    .replace(/[^\w\-\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+    <div class="w-full max-w-md space-y-6">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-center gap-4 mb-8 pt-4">
+            <div class="bg-blue-500 p-2 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-3xl font-black tracking-widest text-white">KEY SCANNER <span class="text-sm font-normal text-teal-400 border border-teal-800 bg-teal-900/30 px-2 py-1 rounded">v3.1</span></h1>
+                <p class="text-xs text-center text-gray-400 tracking-[0.3em] mt-1">WINDOWS 序號辨識系統</p>
+            </div>
+        </div>
 
-// 從一段 OCR 文字中，抓出「英數字（可含破折號分組）」的候選片段，
-// 挑出長度落在合理範圍、且同時含字母與數字的最長候選。
-// 依你們實際序號格式（是否一定要有字母＋數字混合、長度範圍）微調即可。
-// 依你截圖裡的樣本（28YHKT、2NRXCR、XDEA8R、RXPKF8、88ANHW、2CN4D3、4HAWJN），
-// RSA1A- 後面固定接 6 碼英數字。這裡限定抓 6 碼，避免把旁邊儲存格的雜訊
-// 也一起黏進來。如果實際上長度會變動，把 {6} 改成類似 {5,7} 的範圍即可。
-const PREFIX_SUFFIX_LEN = '{6}';
+        <!-- 步驟指示器 -->
+        <div class="flex items-center justify-between px-4 mb-6">
+            <div class="flex flex-col items-center gap-2">
+                <div id="step1-circle" class="step-circle active tech-font">01</div>
+                <span class="text-xs text-blue-400">拍照</span>
+            </div>
+            <div id="step1-line" class="step-line"></div>
+            
+            <div class="flex flex-col items-center gap-2">
+                <div id="step2-circle" class="step-circle tech-font">02</div>
+                <span class="text-xs text-gray-500" id="step2-text">辨識</span>
+            </div>
+            <div id="step2-line" class="step-line"></div>
+            
+            <div class="flex flex-col items-center gap-2">
+                <div id="step3-circle" class="step-circle tech-font">03</div>
+                <span class="text-xs text-gray-500" id="step3-text">QR碼</span>
+            </div>
+        </div>
 
-function extractKeyCandidate(text) {
-  // 1) 優先用已知前綴（如 RSA1A）錨定：在整段文字（忽略空白/破折號）裡找
-  // 前綴出現的位置，取它後面緊接著的英數字當作序號本體。這樣即使其他
-  // 字元被 OCR 讀錯，只要前綴讀對了就能正確定位，比整段亂猜準確很多。
-  const compact = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  for (const prefix of KNOWN_PREFIXES) {
-    const prefixCompact = prefix.replace(/[^A-Z0-9]/g, '');
-    const idx = compact.indexOf(prefixCompact);
-    if (idx !== -1) {
-      const rest = compact.slice(idx + prefixCompact.length, idx + prefixCompact.length + 10);
-      const suffix = rest.match(new RegExp(`^[A-Z0-9]${PREFIX_SUFFIX_LEN}`)) || rest.match(/^[A-Z0-9]{4,10}/);
-      if (suffix) return `${prefix}-${suffix[0]}`;
-    }
-  }
+        <!-- 主要工作區 -->
+        <div class="bg-[#111c2f] rounded-2xl p-6 neon-border relative overflow-hidden">
+            
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 id="step-title" class="text-sm text-blue-400 font-bold tracking-widest">步驟 01 - 拍攝貼紙</h2>
+            </div>
 
-  // 2) 找不到已知前綴時，退回通用抓取邏輯：抓出所有「英數字（可含破折號
-  // 分組）」片段，挑長度合理、英數混合的最長候選。
-  const upper = String(text || '').toUpperCase();
-  const matches = upper.match(/[A-Z0-9]{2,}(?:[-\s][A-Z0-9]{2,}){0,4}/g) || [];
-  if (!matches.length) return '';
+            <!-- 步驟 1: 鏡頭與拍照 -->
+            <div id="camera-section" class="relative rounded-lg overflow-hidden bg-black aspect-[4/3] flex items-center justify-center">
+                <video id="videoElement" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+                <div id="camera-placeholder" class="text-gray-500 text-sm flex flex-col items-center">
+                    <svg class="h-12 w-12 mb-2 opacity-50" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <span>點擊下方按鈕啟動相機</span>
+                </div>
+                
+                <!-- 掃描特效與對齊框 -->
+                <div id="scan-line" class="scan-line"></div>
+                <div id="target-box" class="target-box">
+                    <div class="target-corner-bottom"></div>
+                    <p class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-blue-400 w-full text-center tracking-wider">請將序號對準框內</p>
+                </div>
+            </div>
 
-  const scored = matches.map(m => {
-    const alnum = m.replace(/[^A-Z0-9]/g, '');
-    return { raw: m.replace(/\s+/g, '-'), compact: alnum, len: alnum.length };
-  });
+            <!-- 畫布 (用於擷取畫面，隱藏) -->
+            <canvas id="canvasElement" class="hidden"></canvas>
 
-  const mixed = scored.filter(s =>
-    s.len >= MIN_KEY_ALNUM_LEN && s.len <= MAX_KEY_ALNUM_LEN &&
-    /[A-Z]/.test(s.compact) && /\d/.test(s.compact)
-  );
-  const pool = mixed.length ? mixed : scored.filter(s => s.len >= MIN_KEY_ALNUM_LEN && s.len <= MAX_KEY_ALNUM_LEN);
-  if (!pool.length) return '';
+            <!-- 步驟 2: 處理狀態 -->
+            <div id="processing-section" class="hidden py-8 flex flex-col items-center justify-center gap-4">
+                <div class="relative w-16 h-16">
+                    <svg class="animate-spin text-blue-500 w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-400" id="progress-percent">0%</div>
+                </div>
+                <div id="status-text" class="text-sm text-gray-300 tracking-wider">正在分析影像...</div>
+                
+                <div class="w-full bg-gray-800 rounded-full h-1.5 mt-2">
+                    <div id="progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
 
-  pool.sort((a, b) => b.len - a.len);
-  return pool[0].raw;
-}
+            <!-- 步驟 3: 結果與 QRCode -->
+            <div id="result-section" class="hidden flex flex-col items-center py-4">
+                <div class="bg-white p-4 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.2)] mb-6">
+                    <div id="qrcode"></div>
+                </div>
+                
+                <div class="text-center w-full">
+                    <h3 class="text-xs text-gray-400 tracking-widest mb-1">掃描結果</h3>
+                    <div id="result-text" class="text-2xl font-bold text-green-400 tech-font tracking-widest border border-green-900/50 bg-green-900/20 py-2 rounded-lg break-all"></div>
+                </div>
+            </div>
 
-function isReliableLocalKey(key, confidence, text) {
-  const compact = key.replace(/-/g, '');
-  return confidence >= 55 && compact.length >= MIN_KEY_ALNUM_LEN;
-}
+            <!-- 錯誤提示 -->
+            <div id="error-message" class="hidden mt-4 p-3 bg-red-900/40 border border-red-500/50 rounded-lg text-red-300 text-sm text-center"></div>
 
-function dataUrlToImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not load image.'));
-    img.src = dataUrl;
-  });
-}
+            <!-- 控制按鈕區 -->
+            <div class="mt-6 flex flex-col gap-3">
+                <button id="startCameraBtn" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-4 rounded-xl transition-all shadow-[0_0_15px_rgba(59,130,246,0.5)] active:scale-[0.98] flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    啟動相機
+                </button>
+                
+                <button id="captureBtn" class="hidden w-full bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-white font-bold py-4 rounded-xl transition-all shadow-[0_0_15px_rgba(20,184,166,0.5)] active:scale-[0.98] flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    拍照辨識
+                </button>
 
-async function prepareKeyImages(dataUrl, containerAspect) {
-  const img = await dataUrlToImage(dataUrl);
-  const variants = [];
-  // scale/quality decoupled from binarize so we can A/B test color vs
-  // black/white at the SAME zoom level and JPEG quality - otherwise a
-  // difference in results could just be from the zoom/quality gap, not
-  // the color processing itself.
-  const addVariant = (label, rect, { scale, quality, binarize }) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(rect.w * scale);
-    canvas.height = Math.round(rect.h * scale);
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height);
-    if (binarize) enhanceForOcr(ctx, canvas.width, canvas.height, 'threshold');
-    const url = canvas.toDataURL('image/jpeg', quality);
-    variants.push({
-      label,
-      dataUrl: url,
-      mimeType: 'image/jpeg',
-      base64: url.split(',')[1]
-    });
-  };
+                <button id="retryBtn" class="hidden w-full border border-gray-600 text-gray-300 hover:bg-gray-800 font-bold py-3 rounded-xl transition-colors active:scale-[0.98]">
+                    重新掃描
+                </button>
+            </div>
+        </div>
+    </div>
 
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
+    <script>
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvasElement');
+        const ctx = canvas.getContext('2d');
+        
+        // 區塊
+        const cameraSection = document.getElementById('camera-section');
+        const processingSection = document.getElementById('processing-section');
+        const resultSection = document.getElementById('result-section');
+        const cameraPlaceholder = document.getElementById('camera-placeholder');
+        
+        // UI 元素
+        const scanLine = document.getElementById('scan-line');
+        const targetBox = document.getElementById('target-box');
+        const stepTitle = document.getElementById('step-title');
+        const statusText = document.getElementById('status-text');
+        const progressBar = document.getElementById('progress-bar');
+        const progressPercent = document.getElementById('progress-percent');
+        const errorMessage = document.getElementById('error-message');
+        const resultText = document.getElementById('result-text');
+        const qrcodeContainer = document.getElementById('qrcode');
+        
+        // 按鈕
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const retryBtn = document.getElementById('retryBtn');
 
-  // Instead of guessing where the sticker is (dark-pixel heuristics failed
-  // badly whenever the sticker only filled a small part of the frame, or
-  // when nearby printed text/holograms confused the detector - see the
-  // 2026-07 field screenshots), we crop the exact region the operator was
-  // told to aim at: the on-screen guide brackets (78% w x 20% h, centered
-  // in the #preview-wrap viewport, see CSS `.scan-frame-inner`). This
-  // reflects what the operator actually saw and aligned to, so it's far
-  // more reliable than a pixel heuristic.
-  const guideBand = getGuideFrameRect(w, h, containerAspect);
+        let stream = null;
+        let qrcodeInstance = null;
+        const serialNumberRegex = /\bRSA1A-[A-Za-z0-9]{6}\b/i;
 
-  // 密集小字體表格（像你們這種一格一格的清單）裁切出來的區域常常只有幾十
-  // 像素高，OCR 會很吃力。這裡依裁切框實際高度動態放大，確保餵給 OCR 的
-  // 文字至少有合理的像素高度可辨識（上限 4x，避免過度放大反而模糊）。
-  const TARGET_MIN_CROP_HEIGHT = 220;
-  const upscale = Math.min(4, Math.max(1, TARGET_MIN_CROP_HEIGHT / Math.max(1, guideBand.h)));
+        async function startCamera() {
+            try {
+                // 請求後置鏡頭，並設定解析度以提高辨識率
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    } 
+                });
+                
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    video.classList.remove('hidden');
+                    cameraPlaceholder.classList.add('hidden');
+                    targetBox.style.display = 'block';
+                    
+                    // 切換按鈕
+                    startCameraBtn.classList.add('hidden');
+                    captureBtn.classList.remove('hidden');
+                    errorMessage.classList.add('hidden');
+                };
+            } catch (err) {
+                console.error("相機啟動失敗:", err);
+                showError("無法存取相機，請確認已給予權限。");
+            }
+        }
 
-  addVariant('guide frame - color', guideBand, { scale: upscale, quality: 0.92, binarize: false });
-  // 乾淨版：去除彩色格線＋黑白二值化，通常比原始彩色照片更容易被 OCR 讀對，
-  // 尤其是表格裡有紅線切過文字筆畫的狀況。
-  addVariant('guide frame - clean', guideBand, { scale: upscale, quality: 0.92, binarize: true });
-  addVariant('full label reference', { x: 0, y: 0, w, h }, { scale: 1.0, quality: 0.85, binarize: false });
-  return variants;
-}
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.classList.add('hidden');
+                cameraPlaceholder.classList.remove('hidden');
+                targetBox.style.display = 'none';
+                startCameraBtn.classList.remove('hidden');
+                captureBtn.classList.add('hidden');
+            }
+        }
 
-// Maps the on-screen scan guide box back into raw captured-photo pixel
-// coordinates. The guide box is defined in CSS as 78% width x 20% height,
-// centered, inside #preview-wrap (aspect-ratio 4/3). The live <video>
-// preview uses object-fit: cover inside that same box, so whichever
-// dimension of the raw camera frame doesn't match the 4:3 box gets
-// cropped symmetrically on screen - we replicate that crop math here so
-// the region we cut out of the captured photo matches what the operator
-// saw between the cyan brackets.
-function getGuideFrameRect(w, h, containerAspect) {
-  containerAspect = containerAspect || 4 / 3; // fallback only if not measured
-  const frameAspect = w / h;
-  let offsetX = 0, offsetY = 0, visibleW = w, visibleH = h;
+        startCameraBtn.addEventListener('click', startCamera);
 
-  if (frameAspect > containerAspect) {
-    // Raw frame is relatively wider than the 4:3 box -> left/right cropped on screen.
-    visibleW = containerAspect * h;
-    offsetX = (w - visibleW) / 2;
-  } else if (frameAspect < containerAspect) {
-    // Raw frame is relatively taller than the 4:3 box -> top/bottom cropped on screen.
-    visibleH = w / containerAspect;
-    offsetY = (h - visibleH) / 2;
-  }
+        captureBtn.addEventListener('click', () => {
+            // 擷取當前影片畫面到 canvas
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageDataUrl = canvas.toDataURL('image/jpeg');
+            
+            // 停止相機並進入處理模式
+            stopCamera();
+            startProcessing(imageDataUrl);
+        });
 
-  // Guide box matches #preview-wrap CSS (`.scan-frame-inner`): 78% width x
-  // 20% height, centered. Shrunk from 80%x40% (2026-07) once field testing
-  // showed physically zooming in on just the key-text lines - instead of
-  // fitting the whole COA sticker in frame - dramatically cut character
-  // misreads (V/C, 6/8 etc). A tighter on-screen box nudges operators to
-  // move the camera closer, which captures more real sensor pixels per
-  // character instead of relying on software crop+upscale of a wider shot.
-  const padFactor = 1.2;
-  const gw = Math.min(visibleW, visibleW * 0.78 * padFactor);
-  const gh = Math.min(visibleH, visibleH * 0.20 * padFactor);
-  const gx = offsetX + (visibleW - gw) / 2;
-  const gy = offsetY + (visibleH - gh) / 2;
+        retryBtn.addEventListener('click', () => {
+            resetUI();
+            startCamera();
+        });
 
-  return clampRect({ x: gx, y: gy, w: gw, h: gh }, w, h);
-}
+        function updateSteps(step) {
+            // 重置所有步驟
+            for(let i=1; i<=3; i++) {
+                document.getElementById(`step${i}-circle`).className = 'step-circle tech-font';
+                if(i<3) document.getElementById(`step${i}-line`).className = 'step-line';
+            }
+            
+            // 根據進度上色
+            if (step >= 1) {
+                document.getElementById('step1-circle').classList.add(step > 1 ? 'completed' : 'active');
+                if(step > 1) {
+                    document.getElementById('step1-line').classList.add('completed');
+                    document.getElementById('step2-text').classList.replace('text-gray-500', 'text-blue-400');
+                }
+            }
+            if (step >= 2) {
+                document.getElementById('step2-circle').classList.add(step > 2 ? 'completed' : 'active');
+                if(step > 2) {
+                    document.getElementById('step2-line').classList.add('completed');
+                    document.getElementById('step3-text').classList.replace('text-gray-500', 'text-blue-400');
+                }
+            }
+            if (step >= 3) {
+                document.getElementById('step3-circle').classList.add('active');
+            }
+        }
 
-function clampRect(rect, maxW, maxH) {
-  const x = Math.max(0, Math.min(maxW - 1, rect.x));
-  const y = Math.max(0, Math.min(maxH - 1, rect.y));
-  const w = Math.max(1, Math.min(maxW - x, rect.w));
-  const h = Math.max(1, Math.min(maxH - y, rect.h));
-  return { x, y, w, h };
-}
+        async function startProcessing(imageDataUrl) {
+            // 切換 UI 到辨識中狀態
+            updateSteps(2);
+            stepTitle.innerText = "步驟 02 - 影像分析中";
+            cameraSection.classList.add('hidden');
+            processingSection.classList.remove('hidden');
+            retryBtn.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            
+            progressBar.style.width = '0%';
+            progressPercent.innerText = '0%';
 
-function enhanceForOcr(ctx, width, height, mode = 'threshold') {
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    let r = data[i], g = data[i + 1], b = data[i + 2];
-    // 濾掉彩色格線（例如你們表格上的紅色分隔線）：這類線條顏色飽和度明顯
-    // 偏高（不是灰階黑/白），文字本身跟背景則是灰階。偵測到高飽和度像素
-    // 就直接當成背景白色處理，避免線條切過文字筆畫影響辨識。
-    const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-    const saturation = maxC - minC;
-    if (saturation > 60 && maxC > 80) {
-      r = g = b = 255;
-    }
-    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-    const contrast = Math.max(0, Math.min(255, (gray - 128) * 2.1 + 128));
-    const bw = contrast < 165 ? 0 : 255;
-    const value = mode === 'invert' ? 255 - bw : bw;
-    data[i] = data[i + 1] = data[i + 2] = value;
-  }
-  ctx.putImageData(imageData, 0, 0);
-}
+            try {
+                const worker = await Tesseract.createWorker({
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            const progress = Math.round(m.progress * 100);
+                            progressBar.style.width = `${progress}%`;
+                            progressPercent.innerText = `${progress}%`;
+                            statusText.innerText = '正在擷取序號特徵...';
+                        } else {
+                            statusText.innerText = '載入辨識引擎...';
+                        }
+                    }
+                });
+                
+                await worker.loadLanguage('eng');
+                await worker.initialize('eng');
+                
+                // 為了提高特定序號的辨識率，可以設定白名單
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+                });
 
-function setOcrStatus(type, msg) {
-  const el = document.getElementById('ocr-status');
-  el.className = `status-bar ${type}`;
-  el.innerHTML = type === 'success'
-    ? `<div class="dot"></div><span>${msg}</span>`
-    : type === 'error' || type === 'warning'
-      ? `<span>⚠</span><span>${msg}</span>`
-      : `<div class="spinner"></div><span>${msg}</span>`;
-}
+                const { data: { text } } = await worker.recognize(imageDataUrl);
+                await worker.terminate();
+                
+                processResult(text);
 
-// ─── Confirm ──────────────────────────────────────────────
-function showConfirm(key, options = {}) {
-  showSection('sec-confirm');
-  setStep(3);
-  keyInputVerified = options.verified !== false;
-  const input = document.getElementById('key-input');
-  input.value = formatKeyForDisplay(key);
-  validateKey(input.value);
-  document.getElementById('sec-confirm').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
+            } catch (error) {
+                console.error('OCR Error:', error);
+                showError('辨識引擎發生錯誤，請重試。');
+                resetUI();
+                startCameraBtn.classList.remove('hidden');
+            }
+        }
 
-// RSA序號格式不固定長度（RSA1A-28YHKT、HW-RSA-11AIC、RSA-11AIC 長度都不同），
-// 所以這裡不像 Windows Key 版本那樣強制切成 5-5-5-5-5，只做「大寫化 + 只保留
-// 英數字與破折號」的基本清理，其餘交給人工核對。
-const MIN_ACCEPT_LEN = 4; // 允許產生 QR 的最短英數字長度，依實際最短序號調整
+        function processResult(text) {
+            console.log("Raw OCR Text:", text);
+            
+            const match = text.match(serialNumberRegex);
+            
+            if (match) {
+                const serialNumber = match[0].toUpperCase();
+                showSuccess(serialNumber);
+            } else {
+                showError('找不到符合格式的序號 (RSA1A-XXXXXX)');
+                // 顯示重試按鈕，回到步驟1
+                processingSection.classList.add('hidden');
+                cameraSection.classList.remove('hidden');
+                cameraPlaceholder.classList.remove('hidden');
+                startCameraBtn.classList.remove('hidden');
+                updateSteps(1);
+            }
+        }
 
-function formatKeyInput(el) {
-  keyInputVerified = true;
-  const out = formatKeyForDisplay(el.value);
-  el.value = out;
-  validateKey(out);
-}
+        function showSuccess(serialNumber) {
+            updateSteps(3);
+            stepTitle.innerText = "步驟 03 - 掃描結果";
+            processingSection.classList.add('hidden');
+            resultSection.classList.remove('hidden');
+            retryBtn.classList.remove('hidden');
+            
+            resultText.innerText = serialNumber;
+            
+            // 產生 QR Code
+            qrcodeContainer.innerHTML = ''; // 清空之前的
+            qrcodeInstance = new QRCode(qrcodeContainer, {
+                text: serialNumber,
+                width: 200,
+                height: 200,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        }
 
-function formatKeyForDisplay(key) {
-  return String(key || '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9\-]/g, '')
-    .replace(/-{2,}/g, '-')
-    .slice(0, 40);
-}
+        function showError(msg) {
+            errorMessage.innerText = msg;
+            errorMessage.classList.remove('hidden');
+        }
 
-function getNormalizedKeyFromInput() {
-  const clean = formatKeyForDisplay(document.getElementById('key-input').value).replace(/^-+|-+$/g, '');
-  const alnumLen = clean.replace(/-/g, '').length;
-  return alnumLen >= MIN_ACCEPT_LEN ? clean : '';
-}
-
-// ─── QR Code ──────────────────────────────────────────────
-function validateKey(key) {
-  const hint = document.getElementById('key-valid-hint');
-  const btn = document.getElementById('btn-gen-qr');
-  const clean = String(key || '').replace(/[^A-Z0-9\-]/gi, '');
-  const alnumLen = clean.replace(/-/g, '').length;
-
-  if (alnumLen < MIN_ACCEPT_LEN) {
-    hint.textContent = clean.length > 0 ? `已輸入 ${alnumLen} 碼，至少需要 ${MIN_ACCEPT_LEN} 碼` : '請輸入或核對序號';
-    hint.style.color = clean.length > 0 ? 'var(--warn)' : 'var(--muted)';
-    btn.disabled = true;
-  } else if (keyInputVerified) {
-    hint.textContent = `✓ 已輸入 ${alnumLen} 碼`;
-    hint.style.color = 'var(--success)';
-    btn.disabled = false;
-  } else {
-    hint.textContent = 'OCR 候選碼，請核對後修改任一字再產生 QR';
-    hint.style.color = 'var(--warn)';
-    btn.disabled = true;
-  }
-}
-
-function generateQR() {
-  const key = getNormalizedKeyFromInput();
-  generateQRForKey(key);
-}
-
-function generateQRForKey(key) {
-  currentKey = key;
-
-  showSection('sec-qr');
-  setStep(4);
-
-  document.getElementById('qr-key-text').textContent = key;
-
-  const box = document.getElementById('qr-box');
-  box.innerHTML = '';
-
-  new QRCode(box, {
-    text: key,
-    width: 176,
-    height: 176,
-    colorDark: '#000000',
-    colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.H
-  });
-  document.getElementById('sec-qr').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// ─── Navigation ───────────────────────────────────────────
-function nextDevice() {
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  scanRunId++;
-  window.location.reload();
-}
-
-function resetAll() {
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  scanRunId++;
-  window.location.reload();
-}
-
-function resetAllInPlace() {
-  scanRunId++;
-  currentKey = '';
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-
-  document.getElementById('btn-camera').style.display = 'flex';
-  document.getElementById('btn-shoot').style.display = 'none';
-  document.getElementById('capture-warning').style.display = 'none';
-  const video = document.getElementById('stream');
-  video.srcObject = null;
-  video.style.display = 'none';
-  const preview = document.getElementById('preview');
-  preview.src = '';
-  preview.style.display = 'none';
-  document.getElementById('captured-img').src = '';
-  document.getElementById('captured-wrap').style.display = 'none';
-  document.getElementById('file-input').value = '';
-  document.getElementById('key-input').value = '';
-  document.getElementById('qr-box').innerHTML = '';
-  document.getElementById('qr-key-text').textContent = '';
-  document.getElementById('ocr-raw').textContent = 'Waiting for OCR...';
-  document.getElementById('progress-fill').style.width = '0%';
-  document.getElementById('btn-gen-qr').disabled = true;
-  setOcrStatus('processing', 'Waiting for image...');
-
-  showSection('sec-capture');
-  setStep(1);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function showSection(id) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-}
-
-function setStep(n) {
-  for (let i = 1; i <= 4; i++) {
-    const s = document.getElementById('s' + i);
-    s.classList.remove('active', 'done');
-    if (i < n) s.classList.add('done');
-    else if (i === n) s.classList.add('active');
-  }
-  for (let i = 1; i <= 3; i++) {
-    const l = document.getElementById('l' + i);
-    l.classList.toggle('done', i < n);
-  }
-}
-</script>
+        function resetUI() {
+            updateSteps(1);
+            stepTitle.innerText = "步驟 01 - 拍攝貼紙";
+            
+            cameraSection.classList.remove('hidden');
+            processingSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            
+            startCameraBtn.classList.remove('hidden');
+            captureBtn.classList.add('hidden');
+            retryBtn.classList.add('hidden');
+            
+            document.getElementById('step2-text').classList.replace('text-blue-400', 'text-gray-500');
+            document.getElementById('step3-text').classList.replace('text-blue-400', 'text-gray-500');
+        }
+    </script>
 </body>
 </html>
