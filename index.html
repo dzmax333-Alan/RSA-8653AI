@@ -287,7 +287,8 @@
 
         let stream = null;
         let qrcodeInstance = null;
-        const serialNumberRegex = /\bRSA1A-[A-Za-z0-9]{6}\b/i;
+        // 放寬正規表達式，允許中間有空格或相似字元，並在之後過濾
+        const serialNumberRegex = /RSA1A[- ]?[A-Za-z0-9]{6}/i;
 
         async function startCamera() {
             try {
@@ -335,14 +336,64 @@
             // 擷取當前影片畫面到 canvas
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            const imageDataUrl = canvas.toDataURL('image/jpeg');
+            // 計算擷取框的位置和大小 (對應畫面上的 target-box)
+            // 假設 target-box 寬度為 80%，高度為 120px，置中
+            const boxWidth = video.videoWidth * 0.8;
+            const boxHeight = 150; // 稍微放大擷取範圍，原本 CSS 是 120px
+            const startX = (video.videoWidth - boxWidth) / 2;
+            const startY = (video.videoHeight - boxHeight) / 2;
+
+            // 只將目標區域畫到 canvas 上
+            ctx.drawImage(video, startX, startY, boxWidth, boxHeight, 0, 0, canvas.width, canvas.height);
+            
+            // 進行影像前處理 (灰階與對比增強) 以對抗螢幕摩爾紋
+            preprocessImage(canvas);
+
+            const imageDataUrl = canvas.toDataURL('image/jpeg', 1.0); // 使用最高品質
             
             // 停止相機並進入處理模式
             stopCamera();
             startProcessing(imageDataUrl);
         });
+
+        // 影像前處理：轉灰階並增強對比
+        function preprocessImage(canvas) {
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // 找出最亮和最暗的點來做對比拉伸 (Contrast Stretching)
+            let min = 255;
+            let max = 0;
+
+            for (let i = 0; i < data.length; i += 4) {
+                // 轉灰階 (Luminosity formula)
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                data[i] = data[i + 1] = data[i + 2] = gray;
+                
+                if (gray < min) min = gray;
+                if (gray > max) max = gray;
+            }
+
+            // 增強對比並二值化 (Thresholding)
+            const threshold = (min + max) / 2; // 可以根據情況調整閾值
+            for (let i = 0; i < data.length; i += 4) {
+                // 正規化對比度
+                let normalized = ((data[i] - min) / (max - min)) * 255;
+                
+                // 輕微的二值化處理，讓文字更銳利
+                if(normalized < threshold * 0.8) {
+                    normalized = 0; // 變黑
+                } else if (normalized > threshold * 1.2) {
+                    normalized = 255; // 變白
+                }
+                
+                data[i] = data[i + 1] = data[i + 2] = normalized;
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
 
         retryBtn.addEventListener('click', () => {
             resetUI();
@@ -407,7 +458,8 @@
                 
                 // 為了提高特定序號的辨識率，可以設定白名單
                 await worker.setParameters({
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ', // 加入空格
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // 假設是一個文字塊，有助於表格內文字
                 });
 
                 const { data: { text } } = await worker.recognize(imageDataUrl);
@@ -426,19 +478,49 @@
         function processResult(text) {
             console.log("Raw OCR Text:", text);
             
-            const match = text.match(serialNumberRegex);
+            // 清理 OCR 常見的誤判，例如將 O 看成 0，或移除非必要的空格
+            let cleanedText = text.replace(/0SA1A/g, 'RSA1A') // 修正常見的 R 辨識錯誤
+                                  .replace(/R5A1A/g, 'RSA1A');
+
+            const match = cleanedText.match(serialNumberRegex);
             
             if (match) {
-                const serialNumber = match[0].toUpperCase();
-                showSuccess(serialNumber);
+                // 清理找到的字串：轉大寫、移除所有空格，確保中間有連字號
+                let serialNumber = match[0].toUpperCase().replace(/\s/g, '');
+                
+                // 如果正則表達式匹配到了少了 dash 的版本，把它補回來
+                if (!serialNumber.includes('-')) {
+                    serialNumber = serialNumber.replace('RSA1A', 'RSA1A-');
+                }
+
+                // 最終檢查長度是否正確 (RSA1A- + 6碼 = 12碼)
+                if (serialNumber.length === 12) {
+                    showSuccess(serialNumber);
+                } else {
+                    showError('找到疑似序號，但長度不符，請重試。');
+                    showRetryUI();
+                }
+
             } else {
                 showError('找不到符合格式的序號 (RSA1A-XXXXXX)');
-                // 顯示重試按鈕，回到步驟1
-                processingSection.classList.add('hidden');
-                cameraSection.classList.remove('hidden');
-                cameraPlaceholder.classList.remove('hidden');
-                startCameraBtn.classList.remove('hidden');
-                updateSteps(1);
+                showRetryUI();
+            }
+        }
+
+        function showRetryUI() {
+            // 顯示重試按鈕，回到步驟1
+            processingSection.classList.add('hidden');
+            cameraSection.classList.remove('hidden');
+            cameraPlaceholder.classList.add('hidden'); // 相機已啟動，不需要 placeholder
+            captureBtn.classList.remove('hidden');
+            startCameraBtn.classList.add('hidden');
+            updateSteps(1);
+            // 重新啟動相機串流
+            if(!stream || !stream.active) {
+                startCamera();
+            } else {
+                 video.classList.remove('hidden');
+                 targetBox.style.display = 'block';
             }
         }
 
@@ -447,6 +529,10 @@
             stepTitle.innerText = "步驟 03 - 掃描結果";
             processingSection.classList.add('hidden');
             resultSection.classList.remove('hidden');
+            
+            // 隱藏啟動相機與拍照按鈕，只顯示重新掃描
+            startCameraBtn.classList.add('hidden');
+            captureBtn.classList.add('hidden');
             retryBtn.classList.remove('hidden');
             
             resultText.innerText = serialNumber;
