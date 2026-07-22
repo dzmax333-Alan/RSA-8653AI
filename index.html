@@ -70,9 +70,10 @@
                 </svg>
             </div>
             <h1 class="text-2xl font-bold tracking-wider text-white">KEY SCANNER</h1>
-            <span class="text-xs text-teal-400 border border-teal-400 rounded px-2 py-0.5">v3.2</span>
+            <span class="text-xs text-teal-400 border border-teal-400 rounded px-2 py-0.5">v3.3</span>
         </div>
         <p class="text-xs text-gray-400 tracking-widest">WINDOWS 序號辨識系統</p>
+        <p class="text-[10px] text-gray-500 mt-1">🔒 全程本機運算，彩色影像，不上傳雲端 API</p>
     </header>
 
     <!-- Progress Steps -->
@@ -246,16 +247,50 @@
             canvas.height = cropHeight;
 
             // 將 Video 對應區域畫到 Canvas，維持彩色且不變形
+            ctx.filter = 'none';
             ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
             
-            // 直接取得高品質彩色 JPEG
-            const imageDataUrl = canvas.toDataURL('image/jpeg', 1.0);
+            // 複製一份原始彩色截圖畫布，作為備援辨識來源
+            const rawCanvas = document.createElement('canvas');
+            rawCanvas.width = canvas.width;
+            rawCanvas.height = canvas.height;
+            rawCanvas.getContext('2d').drawImage(canvas, 0, 0);
             
             stopCamera();
-            startProcessing(imageDataUrl);
+            startProcessing(rawCanvas);
         });
 
-        async function startProcessing(imageDataUrl) {
+        // 在保留彩色的前提下，將截圖放大並提升對比/清晰度，幫助辨識小字
+        // (不做灰階/黑白轉換)
+        function buildEnhancedCanvas(sourceCanvas, scale) {
+            const out = document.createElement('canvas');
+            out.width = Math.round(sourceCanvas.width * scale);
+            out.height = Math.round(sourceCanvas.height * scale);
+            const octx = out.getContext('2d');
+            octx.imageSmoothingEnabled = true;
+            octx.imageSmoothingQuality = 'high';
+            octx.filter = 'contrast(150%) saturate(115%) brightness(103%)';
+            octx.drawImage(sourceCanvas, 0, 0, out.width, out.height);
+            return out;
+        }
+
+        // 從 OCR 原始文字中擷取 RSA1A-XXXXXX 格式序號
+        // 先嚴格比對，失敗再用模糊比對容忍前綴常見誤判 (O/0, I/1, S/5 等)
+        // 後方 6 碼隨機字元不做校正，避免誤改正確結果
+        function extractSerial(rawText) {
+            const text = rawText.toUpperCase().replace(/\s+/g, ' ');
+
+            let m = text.match(/RSA1A[-_ ]?([A-Z0-9]{6})/);
+            if (m) return `RSA1A-${m[1]}`;
+
+            const fuzzyPrefix = /R[S5][A4][1IL][A4][-_ ]?([A-Z0-9]{6})/;
+            m = text.match(fuzzyPrefix);
+            if (m) return `RSA1A-${m[1]}`;
+
+            return null;
+        }
+
+        async function startProcessing(sourceCanvas) {
             // UI Update for processing
             captureBtn.classList.add('hidden');
             cameraContainer.classList.add('hidden');
@@ -268,22 +303,35 @@
             step2Indicator.children[0].classList.add('text-blue-500', 'shadow-[0_0_10px_rgba(59,130,246,0.5)]');
 
             try {
-                // Initialize Tesseract
+                // Initialize Tesseract (本機 WASM 運算，無外部 API 呼叫)
                 const worker = await Tesseract.createWorker('eng');
-                
-                // Recognize text
-                const { data: { text } } = await worker.recognize(imageDataUrl);
-                console.log("OCR Raw Text:", text); // 可以在開發者工具查看原始辨識結果
-                
+
+                // 限定字元集，減少無關符號/雜訊干擾辨識
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'RSA0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-'
+                });
+
+                // 依序嘗試：彩色放大加強圖(單行) -> 彩色放大加強圖(區塊) -> 原始彩色圖(備援)
+                const attempts = [
+                    { canvas: buildEnhancedCanvas(sourceCanvas, 3), psm: '7' },
+                    { canvas: buildEnhancedCanvas(sourceCanvas, 3), psm: '6' },
+                    { canvas: sourceCanvas, psm: '6' }
+                ];
+
+                let found = null;
+                for (const attempt of attempts) {
+                    await worker.setParameters({ tessedit_pageseg_mode: attempt.psm });
+                    const { data: { text } } = await worker.recognize(attempt.canvas.toDataURL('image/jpeg', 1.0));
+                    console.log(`OCR (psm=${attempt.psm}) Raw Text:`, text);
+
+                    found = extractSerial(text);
+                    if (found) break;
+                }
+
                 await worker.terminate();
 
-                // 使用 Regular Expression 尋找 RSA1A- 開頭，後面接 6 個英數字
-                // \b 代表單詞邊界
-                const regex = /RSA1A-[A-Za-z0-9]{6}/i;
-                const match = text.match(regex);
-
-                if (match) {
-                    showSuccess(match[0].toUpperCase());
+                if (found) {
+                    showSuccess(found);
                 } else {
                     showError();
                 }
