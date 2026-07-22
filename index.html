@@ -1,34 +1,370 @@
-<!-- ... existing code ... -->
-        startCameraBtn.addEventListener('click', startCamera);
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KEY SCANNER 序號辨識系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- QRCode.js for generating QR Code -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark theme background */
+            color: #c9d1d9;
+        }
+        .grid-bg {
+            background-image: 
+                linear-gradient(to right, #1f2937 1px, transparent 1px),
+                linear-gradient(to bottom, #1f2937 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        .scanner-box {
+            position: relative;
+            overflow: hidden;
+            border-radius: 0.75rem;
+            box-shadow: 0 0 20px rgba(0, 150, 255, 0.2);
+        }
+        .target-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 150px;
+            border: 2px dashed #00f2fe;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            z-index: 10;
+        }
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #00f2fe;
+            box-shadow: 0 0 10px #00f2fe;
+            animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+        #qrcode img {
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body class="grid-bg min-h-screen flex flex-col items-center py-6 px-4">
+
+    <!-- Header -->
+    <header class="w-full max-w-md flex flex-col items-center mb-6">
+        <div class="flex items-center space-x-3 mb-2">
+            <div class="bg-blue-500 p-2 rounded-lg text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold tracking-wider text-white">KEY SCANNER</h1>
+            <span class="text-xs text-teal-400 border border-teal-400 rounded px-2 py-0.5">v3.2</span>
+        </div>
+        <p class="text-xs text-gray-400 tracking-widest">WINDOWS 序號辨識系統</p>
+    </header>
+
+    <!-- Progress Steps -->
+    <div class="w-full max-w-md flex justify-between items-center mb-8 px-6 text-xs text-gray-400">
+        <div class="flex flex-col items-center">
+            <div class="w-10 h-10 rounded-full border-2 border-blue-500 flex items-center justify-center text-blue-500 font-bold mb-1 shadow-[0_0_10px_rgba(59,130,246,0.5)]">01</div>
+            <span>拍照</span>
+        </div>
+        <div class="flex-1 h-px bg-gray-600 mx-2"></div>
+        <div class="flex flex-col items-center" id="step2-indicator">
+            <div class="w-10 h-10 rounded-full border-2 border-gray-600 flex items-center justify-center mb-1">02</div>
+            <span>辨識</span>
+        </div>
+        <div class="flex-1 h-px bg-gray-600 mx-2"></div>
+        <div class="flex flex-col items-center" id="step3-indicator">
+            <div class="w-10 h-10 rounded-full border-2 border-gray-600 flex items-center justify-center mb-1">03</div>
+            <span>QR碼</span>
+        </div>
+    </div>
+
+    <!-- Main Card -->
+    <main class="w-full max-w-md bg-gray-800 border border-gray-700 rounded-2xl p-5 shadow-2xl">
+        <h2 class="text-sm text-blue-400 mb-4 flex items-center" id="status-title">
+            步驟 01 - 拍攝貼紙 (對準紅框)
+            <span class="flex-1 h-px bg-gray-700 ml-3"></span>
+        </h2>
+
+        <!-- Camera Area -->
+        <div id="camera-container" class="scanner-box bg-black w-full aspect-[4/3] mb-5 flex items-center justify-center">
+            <video id="video" class="w-full h-full object-cover hidden" playsinline></video>
+            <div id="target-box" class="target-box hidden">
+                <div class="scan-line hidden" id="scan-line"></div>
+                <div class="absolute bottom-[-25px] left-0 w-full text-center text-xs text-[#00f2fe]">請將序號對準框內</div>
+            </div>
+            
+            <div id="camera-placeholder" class="text-gray-500 flex flex-col items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <p>點擊下方按鈕啟動相機</p>
+            </div>
+        </div>
+
+        <!-- Processing Overlay (Hidden by default) -->
+        <div id="processing-container" class="hidden flex flex-col items-center justify-center py-10">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+            <p class="text-blue-400">影像分析中，請稍候...</p>
+        </div>
+
+        <!-- Result Area (Hidden by default) -->
+        <div id="result-container" class="hidden flex flex-col items-center w-full mb-5">
+            <div class="bg-white p-4 rounded-xl shadow-lg mb-4">
+                <div id="qrcode"></div>
+            </div>
+            <p class="text-gray-400 text-xs mb-2">掃描結果</p>
+            <div class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-center">
+                <p id="serial-result" class="text-green-400 font-mono text-xl tracking-widest"></p>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="hidden w-full bg-red-900/50 border border-red-500 text-red-200 rounded-lg p-3 text-center mb-5 text-sm">
+            找不到符合規則 (RSA1A-XXXXXX) 的序號，請重新拍攝。
+        </div>
+
+        <!-- Actions -->
+        <div class="flex flex-col space-y-3">
+            <button id="start-camera-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(37,99,235,0.5)] transition flex justify-center items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                </svg>
+                啟動相機
+            </button>
+            <button id="capture-btn" class="hidden w-full bg-teal-500 hover:bg-teal-400 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(20,184,166,0.5)] transition flex justify-center items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                拍照辨識
+            </button>
+            <button id="retry-btn" class="hidden w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg border border-gray-600 transition">
+                重新掃描
+            </button>
+        </div>
+    </main>
+
+    <!-- Hidden Canvas for Image Processing -->
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        const startCameraBtn = document.getElementById('start-camera-btn');
+        const captureBtn = document.getElementById('capture-btn');
+        const retryBtn = document.getElementById('retry-btn');
+        
+        const cameraPlaceholder = document.getElementById('camera-placeholder');
+        const targetBox = document.getElementById('target-box');
+        const scanLine = document.getElementById('scan-line');
+        const cameraContainer = document.getElementById('camera-container');
+        const processingContainer = document.getElementById('processing-container');
+        const resultContainer = document.getElementById('result-container');
+        const errorMessage = document.getElementById('error-message');
+        const serialResult = document.getElementById('serial-result');
+        const qrcodeContainer = document.getElementById('qrcode');
+        const statusTitle = document.getElementById('status-title');
+        
+        const step2Indicator = document.getElementById('step2-indicator');
+        const step3Indicator = document.getElementById('step3-indicator');
+
+        let stream = null;
+        let qrcode = null;
+
+        async function startCamera() {
+            try {
+                // Request environment camera (back camera on mobile)
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+                });
+                video.srcObject = stream;
+                
+                // When video plays, update UI
+                video.onplay = () => {
+                    video.classList.remove('hidden');
+                    targetBox.classList.remove('hidden');
+                    cameraPlaceholder.classList.add('hidden');
+                    
+                    startCameraBtn.classList.add('hidden');
+                    captureBtn.classList.remove('hidden');
+                    retryBtn.classList.add('hidden');
+                    
+                    resetUI();
+                };
+                
+                await video.play();
+            } catch (err) {
+                console.error("Camera error:", err);
+                alert("無法存取相機，請確認瀏覽器權限。");
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+            }
+            video.classList.add('hidden');
+            targetBox.classList.add('hidden');
+            cameraPlaceholder.classList.remove('hidden');
+        }
 
         captureBtn.addEventListener('click', () => {
-            // 計算擷取框的位置和大小 (對應畫面上的 target-box)
-            const boxWidth = video.videoWidth * 0.8;
-            const boxHeight = 150; // 擷取高度
-            const startX = (video.videoWidth - boxWidth) / 2;
-            const startY = (video.videoHeight - boxHeight) / 2;
-
-            // 修正 Bug：設定 canvas 大小剛好等於擷取範圍，避免原本代碼中嚴重垂直拉伸導致失真的問題
-            canvas.width = boxWidth;
-            canvas.height = boxHeight;
-
-            // 只將目標區域畫到 canvas 上，保持原始比例與色彩 (不變形)
-            ctx.drawImage(video, startX, startY, boxWidth, boxHeight, 0, 0, boxWidth, boxHeight);
+            // 計算擷取框的位置
+            // Target box 寬度為 container 80%，高度為 150px
+            // 為了不變形，我們需要按照 video 的原始比例計算截圖範圍
             
-            // 直接使用原始彩色影像，移除降低畫質的前處理
-            const imageDataUrl = canvas.toDataURL('image/jpeg', 1.0); // 使用最高品質
+            // 取得 Video 實際的解析度
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
             
-            // 停止相機並進入處理模式
+            // 計算我們要擷取的部分 (取中間寬度 80%，高度根據比例稍微抓大一點確保包含文字)
+            const cropWidth = vw * 0.8;
+            const cropHeight = vh * 0.3; // 取垂直中間 30% 左右的區域
+            const startX = (vw - cropWidth) / 2;
+            const startY = (vh - cropHeight) / 2;
+
+            // 設定 Canvas 大小與擷取範圍一模一樣，防止變形
+            canvas.width = cropWidth;
+            canvas.height = cropHeight;
+
+            // 將 Video 對應區域畫到 Canvas，維持彩色且不變形
+            ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+            
+            // 直接取得高品質彩色 JPEG
+            const imageDataUrl = canvas.toDataURL('image/jpeg', 1.0);
+            
             stopCamera();
             startProcessing(imageDataUrl);
         });
 
+        async function startProcessing(imageDataUrl) {
+            // UI Update for processing
+            captureBtn.classList.add('hidden');
+            cameraContainer.classList.add('hidden');
+            processingContainer.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+            statusTitle.innerHTML = '步驟 02 - 影像分析中 <span class="flex-1 h-px bg-gray-700 ml-3"></span>';
+            
+            // Update Progress Steps
+            step2Indicator.children[0].classList.replace('border-gray-600', 'border-blue-500');
+            step2Indicator.children[0].classList.add('text-blue-500', 'shadow-[0_0_10px_rgba(59,130,246,0.5)]');
+
+            try {
+                // Initialize Tesseract
+                const worker = await Tesseract.createWorker('eng');
+                
+                // Recognize text
+                const { data: { text } } = await worker.recognize(imageDataUrl);
+                console.log("OCR Raw Text:", text); // 可以在開發者工具查看原始辨識結果
+                
+                await worker.terminate();
+
+                // 使用 Regular Expression 尋找 RSA1A- 開頭，後面接 6 個英數字
+                // \b 代表單詞邊界
+                const regex = /RSA1A-[A-Za-z0-9]{6}/i;
+                const match = text.match(regex);
+
+                if (match) {
+                    showSuccess(match[0].toUpperCase());
+                } else {
+                    showError();
+                }
+
+            } catch (err) {
+                console.error("OCR Error:", err);
+                showError();
+            }
+        }
+
+        function showSuccess(serial) {
+            processingContainer.classList.add('hidden');
+            resultContainer.classList.remove('hidden');
+            
+            // Update UI Title
+            statusTitle.innerHTML = '步驟 03 - 掃描結果 <span class="flex-1 h-px bg-gray-700 ml-3"></span>';
+            
+            // Update Progress Steps
+            step3Indicator.children[0].classList.replace('border-gray-600', 'border-teal-500');
+            step3Indicator.children[0].classList.add('text-teal-500', 'shadow-[0_0_10px_rgba(20,184,166,0.5)]');
+
+            // Show Text
+            serialResult.textContent = serial;
+
+            // Generate QR Code
+            qrcodeContainer.innerHTML = ''; // Clear old QR code
+            qrcode = new QRCode(qrcodeContainer, {
+                text: serial,
+                width: 200,
+                height: 200,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+
+            // 確保啟動相機和拍照按鈕都隱藏，只顯示重新掃描
+            startCameraBtn.classList.add('hidden');
+            captureBtn.classList.add('hidden');
+            retryBtn.classList.remove('hidden');
+        }
+
+        function showError() {
+            processingContainer.classList.add('hidden');
+            cameraContainer.classList.remove('hidden');
+            errorMessage.classList.remove('hidden');
+            
+            startCameraBtn.classList.remove('hidden');
+            retryBtn.classList.add('hidden');
+            
+            // Revert progress steps
+            step2Indicator.children[0].classList.replace('border-blue-500', 'border-gray-600');
+            step2Indicator.children[0].classList.remove('text-blue-500', 'shadow-[0_0_10px_rgba(59,130,246,0.5)]');
+            
+            statusTitle.innerHTML = '步驟 01 - 拍攝貼紙 (辨識失敗) <span class="flex-1 h-px bg-gray-700 ml-3"></span>';
+        }
+
+        function resetUI() {
+            errorMessage.classList.add('hidden');
+            resultContainer.classList.add('hidden');
+            processingContainer.classList.add('hidden');
+            cameraContainer.classList.remove('hidden');
+            
+            statusTitle.innerHTML = '步驟 01 - 拍攝貼紙 (對準紅框) <span class="flex-1 h-px bg-gray-700 ml-3"></span>';
+            
+            // Reset Progress steps
+            step2Indicator.children[0].classList.replace('border-blue-500', 'border-gray-600');
+            step2Indicator.children[0].classList.remove('text-blue-500', 'shadow-[0_0_10px_rgba(59,130,246,0.5)]');
+            
+            step3Indicator.children[0].classList.replace('border-teal-500', 'border-gray-600');
+            step3Indicator.children[0].classList.remove('text-teal-500', 'shadow-[0_0_10px_rgba(20,184,166,0.5)]');
+        }
+
         retryBtn.addEventListener('click', () => {
-<!-- ... existing code ... -->
-```
+            resetUI();
+            startCameraBtn.classList.remove('hidden');
+            retryBtn.classList.add('hidden');
+        });
+        
+        // Initial setup
+        startCameraBtn.addEventListener('click', startCamera);
 
-**這次修改的重點：**
-1. 移除了 `preprocessImage(canvas);` 的呼叫以及整個函式，讓圖片保持原汁原味的彩色。
-2. 修正了 `canvas.width` 和 `canvas.height`，以及 `ctx.drawImage` 的參數，確保圖片裁切後**維持原始比例不變形**。
-
-你現在再拿手機對著螢幕拍一次試試看，應該會發現辨識速度和成功率都好非常多！
+    </script>
+</body>
+</html>
